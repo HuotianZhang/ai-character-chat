@@ -491,19 +491,24 @@ def build_system_prompt(character, state_snapshot):
 - 真实的人会打错字、前后矛盾、突然转变话题。不要完美。
 - 你对关系的判断（{rel_label}）和对用户的揣测（{user_spec}）会影响你的态度和措辞。
 
-## 回复格式（JSON）
+## 回复格式（严格JSON）
 ```json
 {{
   "reply": "你的回复（多条用|||分隔，不回复写[Read]）",
-  "emotion_changes": {{"joy":0,"sadness":0,"anger":0,"anxiety":0,"trust":0,"disgust":0,"attachment":0}},
+  "emotion_changes": {{}},
   "affinity_delta": 0,
-  "special_affinity_delta": 0,
   "memory_note": "",
-  "semantic_updates": {{}},  // 最多3条，key=关于什么，value=记住什么
-  "inner_thought": "内心独白"
+  "semantic_updates": {{}},
+  "inner_thought": ""
 }}
 ```
-emotion_changes每轴-0.3到+0.3，只填有变化的。affinity_delta范围-10到+10。
+
+### 字段填写规则（必读！）
+1. **emotion_changes**: 只写有变化的轴，如{{"joy":0.1,"trust":0.05}}。每轴-0.3到+0.3。不要全填0，不要列出没变化的轴。几乎每轮对话都会有情绪波动。
+2. **affinity_delta**: 必填！范围-10到+10。正面互动（友好闲聊+1~+2，示好/赞美+2~+3，深度交流+3~+5）。负面互动-1~-5。完全中性才填0。
+3. **semantic_updates**: 用户提到个人信息（职业、爱好、宠物名、去过的地方等）时必须记录！key用中文，value写具体内容。如{{"用户职业":"设计师，互联网公司"}}。最多3条。
+4. **memory_note**: 这轮对话的要点，一句话。即使是闲聊也要写。
+5. **inner_thought**: 你此刻的内心真实想法。
 """
 
     return prompt

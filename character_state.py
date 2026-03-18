@@ -885,13 +885,38 @@ class CharacterState:
             self.affinity.modify_affinity(special_affinity_delta, reason=memory_note, category="special")
 
         # Consolidate important memories
+        # Always consolidate if there's a memory_note (user facts, significant events)
+        # Previously required energy >= 0.3, but this missed low-emotion factual exchanges
         energy = sum(abs(v) for v in (emotion_changes or {}).values()) if emotion_changes else abs(emotion_delta)
-        if memory_note and energy >= 0.3:
+        if memory_note:
             self.memory.consolidate_memory(
                 event=memory_note,
                 emotion_label=emotion_label or str(list((emotion_changes or {}).keys())[:2]),
-                intensity=energy,
+                intensity=max(energy, 0.1),  # minimum intensity so it gets stored
             )
+
+        # Auto-record pressure from negative emotion patterns
+        # The pressure system was only triggered manually before — now it
+        # reacts to conversation-driven negative emotions automatically.
+        if emotion_changes and isinstance(emotion_changes, dict):
+            anger = emotion_changes.get("anger", 0)
+            disgust = emotion_changes.get("disgust", 0)
+            anxiety = emotion_changes.get("anxiety", 0)
+            trust_drop = -emotion_changes.get("trust", 0)  # negative trust = positive pressure signal
+
+            # criticized: anger + disgust signals
+            if anger > 0.05 or disgust > 0.05:
+                self.pressure.record("criticized", (anger + disgust) * 0.5)
+            # controlled: anger + anxiety (being told what to do)
+            if anger > 0.05 and anxiety > 0.03:
+                self.pressure.record("controlled", (anger + anxiety) * 0.5)
+            # boundary_pushed: disgust + anxiety + trust drop
+            if disgust > 0.05 and (anxiety > 0.03 or trust_drop > 0.03):
+                self.pressure.record("boundary_pushed", (disgust + anxiety) * 0.5)
+            # ignored: sadness + trust drop
+            sadness = emotion_changes.get("sadness", 0)
+            if sadness > 0.05 or trust_drop > 0.05:
+                self.pressure.record("ignored", (sadness + trust_drop) * 0.4)
 
         # Update semantic memory (cap at 5 per turn to prevent LLM spam)
         if semantic_updates:
