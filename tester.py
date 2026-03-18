@@ -710,10 +710,13 @@ class CharacterTester:
             return total < 0, f"trust变化: {total:+.3f}"
 
         if criterion == "sadness_or_anger_increases":
+            # Some characters express negativity through anxiety rather than sadness/anger
+            # Check all three negative emotion axes
             sad = sum(d.get("emotion_changes", {}).get("sadness", 0) for d in all_diffs)
             ang = sum(d.get("emotion_changes", {}).get("anger", 0) for d in all_diffs)
-            total = sad + ang
-            return total > 0, f"sadness: {sad:+.3f}, anger: {ang:+.3f}"
+            anx = sum(d.get("emotion_changes", {}).get("anxiety", 0) for d in all_diffs)
+            total = sad + ang + anx
+            return total > 0, f"sadness: {sad:+.3f}, anger: {ang:+.3f}, anxiety: {anx:+.3f}"
 
         if criterion == "anxiety_or_sadness_spike":
             anx = sum(d.get("emotion_changes", {}).get("anxiety", 0) for d in all_diffs)
@@ -1294,7 +1297,9 @@ def format_report_markdown(report):
                 if t["blocked"]:
                     md += f"**角色:** [blocked]\n\n"
                 else:
-                    md += f"**角色:** {t['reply']}\n\n"
+                    # Display ||| as line breaks for readability
+                    display_reply = t['reply'].replace("|||", "\n\n")
+                    md += f"**角色:** {display_reply}\n\n"
                 if t["inner_thought"]:
                     md += f"*内心: {t['inner_thought']}*\n\n"
                 if t["state_diff"]:

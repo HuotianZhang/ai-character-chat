@@ -628,6 +628,13 @@ class MemorySystem:
         if len(self.short_term) > self.max_short:
             self.short_term = self.short_term[-self.max_short:]
 
+    def get_last_user_message(self):
+        """Get the most recent user message from short-term memory."""
+        for msg in reversed(self.short_term):
+            if msg["role"] == "user":
+                return msg["content"]
+        return ""
+
     def consolidate_memory(self, event, emotion_label, intensity, context=""):
         self.long_term.append({
             "event": event, "emotion": emotion_label, "intensity": intensity,
@@ -940,6 +947,77 @@ class CharacterState:
             for key, value in items:
                 self.memory.update_semantic(key, value)
 
+        # Fallback: infer semantic updates from the LAST user input when LLM missed them
+        if not semantic_updates:
+            last_user_msg = self.memory.get_last_user_message()
+            if last_user_msg:
+                inferred_sem = self._infer_semantic_from_input(last_user_msg)
+                if inferred_sem:
+                    print(f"[State] Fallback semantic inference: {inferred_sem}")
+                    for key, value in inferred_sem.items():
+                        self.memory.update_semantic(key, value)
+
+    def _infer_semantic_from_input(self, user_input):
+        """
+        Fallback: extract user personal info from their message when LLM missed it.
+        Uses simple pattern matching for common self-disclosure patterns.
+        Returns dict of {key: value} or empty dict.
+        """
+        import re
+        results = {}
+        msg = user_input.strip()
+
+        # Job/profession patterns
+        job_patterns = [
+            r'我(?:是)?做(.{2,10})的',
+            r'我(?:是)?(?:一个|一名)?(.{2,8}(?:师|员|家|手|生|者))',
+            r'我在(.{2,15}(?:公司|厂|院|所|行|店))',
+        ]
+        for pat in job_patterns:
+            m = re.search(pat, msg)
+            if m:
+                results["用户职业"] = m.group(1).strip()
+                break
+
+        # Pet patterns
+        pet_patterns = [
+            r'(?:养了|有)(?:一只|一条|一个)?(?:叫)?[「「\'"]?(.{1,6})[」」\'"]?的(猫|狗|鸟|兔|鱼|仓鼠|龙猫)',
+            r'(?:养了|有)(?:一只|一条|一个)?(猫|狗|鸟|兔)',
+        ]
+        for pat in pet_patterns:
+            m = re.search(pat, msg)
+            if m:
+                groups = m.groups()
+                if len(groups) == 2:
+                    results["用户宠物"] = f"{groups[1]}，叫{groups[0]}"
+                else:
+                    results["用户宠物"] = groups[0]
+                break
+
+        # Favorite singer/artist
+        singer_pats = [
+            r'(?:最)?喜欢(?:的)?(?:歌手|歌星|偶像|明星)(?:是)?(.{2,10})',
+            r'(?:最)?喜欢(?:听)?(.{2,8})(?:的歌|的音乐)',
+        ]
+        for pat in singer_pats:
+            m = re.search(pat, msg)
+            if m:
+                results["用户喜欢的歌手"] = m.group(1).strip()
+                break
+
+        # Location/city
+        loc_pats = [
+            r'我(?:在|住)(.{2,8}(?:市|区|县|镇|村))',
+            r'我(?:是)(.{2,6})人',
+        ]
+        for pat in loc_pats:
+            m = re.search(pat, msg)
+            if m:
+                results["用户所在地"] = m.group(1).strip()
+                break
+
+        return results
+
     def _infer_emotion_from_reply(self, reply):
         """
         Fallback: infer minimal emotion_changes and affinity_delta from reply text
@@ -960,10 +1038,14 @@ class CharacterState:
         sad_keywords = ["难过", "伤心", "失望", "😢", "😭", "🥺", "不开心", "不想"]
         anx_keywords = ["紧张", "不安", "慌", "😳", "怎么办", "不知道该"]
 
+        attach_keywords = ["安心", "想你", "不舍", "依赖", "离不开", "陪", "在身边",
+                           "重要", "珍惜", "心化了", "心跳"]
+
         pos_count = sum(1 for kw in pos_keywords if kw in r)
         neg_count = sum(1 for kw in neg_keywords if kw in r)
         sad_count = sum(1 for kw in sad_keywords if kw in r)
         anx_count = sum(1 for kw in anx_keywords if kw in r)
+        attach_count = sum(1 for kw in attach_keywords if kw in r)
 
         ec = {}
         aff = 0
@@ -985,6 +1067,9 @@ class CharacterState:
 
         if anx_count > 0:
             ec["anxiety"] = round(min(0.1, anx_count * 0.03), 3)
+
+        if attach_count > 0:
+            ec["attachment"] = round(min(0.08, attach_count * 0.03), 3)
 
         return ec, aff
 
