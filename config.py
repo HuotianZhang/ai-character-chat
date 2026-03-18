@@ -5,13 +5,13 @@ import os
 
 # === LLM API Configuration ===
 # Gemini API
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_API_KEY_HERE")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "Your API")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
 # Generation parameters
 LLM_TEMPERATURE = 0.85  # Creativity level for character dialogue
-LLM_MAX_TOKENS = 1024
+LLM_MAX_TOKENS = 4096   # Must be large: Gemini 2.5 Flash thinking tokens count toward this limit
 
 # === Storage Configuration ===
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")

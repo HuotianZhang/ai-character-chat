@@ -21,11 +21,15 @@ from character_state import CharacterState
 from conversation_engine import ConversationEngine
 from time_controller import TimeController
 from proactive_events import ProactiveEventSystem
+from chat_assistant import generate_assistant_message, get_strategies
+from tester import CharacterTester, format_report_markdown, get_test_phases
 
 # Global instances
 engine = None
 time_ctrl = None
 proactive_sys = None
+_tester = None  # Active tester instance
+_tester_thread = None  # Background thread for full test run
 
 # Thread safety: lock for all state-mutating operations (chat, inject, etc.)
 # This ensures that concurrent requests don't corrupt character state.
@@ -113,6 +117,16 @@ class ChatHandler(BaseHTTPRequestHandler):
             self._handle_poll_events()
         elif path == "/api/debug/state":
             self._handle_debug_state()
+        elif path == "/api/assistant/strategies":
+            self._handle_assistant_strategies()
+        elif path == "/api/tester/status":
+            self._handle_tester_status()
+        elif path == "/api/tester/phases":
+            self._handle_tester_phases()
+        elif path == "/api/tester/report":
+            self._handle_tester_report()
+        elif path == "/api/tester/events":
+            self._handle_tester_events()
         else:
             self.send_response(404)
             self.end_headers()
@@ -141,6 +155,12 @@ class ChatHandler(BaseHTTPRequestHandler):
             self._handle_debug_simulate_silence()
         elif path == "/api/debug/evaluate_relationship":
             self._handle_debug_evaluate_relationship()
+        elif path == "/api/assistant/chat":
+            self._handle_assistant_chat()
+        elif path == "/api/tester/run":
+            self._handle_tester_run()
+        elif path == "/api/tester/stop":
+            self._handle_tester_stop()
         else:
             self._send_json({"error": "Not found"}, 404)
 
@@ -480,6 +500,8 @@ class ChatHandler(BaseHTTPRequestHandler):
             "interaction_count": state.interaction_count,
             "recent_stimuli": state.emotion.stimulus_history[-10:],
             "relationship_judge": state.judge.to_dict(),
+            "llm_judge_eval_raw": getattr(state.judge, '_last_eval_raw', ''),
+            "llm_judge_decision_raw": getattr(state.judge, '_last_judge_raw', ''),
         }
         if proactive_sys:
             result["silence"] = proactive_sys.get_silence_status()
@@ -618,6 +640,180 @@ class ChatHandler(BaseHTTPRequestHandler):
             "relationship_judge": result,
             "status": engine.state.get_status_summary(),
         })
+
+
+    # ---- AI Assistant Handlers ----
+
+    def _handle_assistant_strategies(self):
+        """GET /api/assistant/strategies — Return available chat strategies."""
+        self._send_json({"strategies": get_strategies()})
+
+    def _handle_assistant_chat(self):
+        """POST /api/assistant/chat — Generate a message using the AI assistant.
+
+        Body: {"strategy": "high_value"}
+        Returns: {"message": "...", "strategy": "...", "reasoning": "...", "llm_raw": "..."}
+
+        After generating, automatically sends the message through the normal chat pipeline.
+        """
+        global engine, time_ctrl, proactive_sys, _engine_lock
+
+        if engine is None:
+            self._send_json({"error": "Character not loaded"}, 400)
+            return
+
+        data = self._read_body()
+        strategy = data.get("strategy", "high_value")
+
+        with _engine_lock:
+            try:
+                # 1. Generate the assistant message
+                judge_info = engine.state.judge.to_dict()
+                status = engine.state.get_status_summary()
+
+                assistant_result = generate_assistant_message(
+                    engine.conversation_history,
+                    engine.state.character,
+                    strategy,
+                    status_summary=status,
+                    judge_info=judge_info,
+                )
+
+                generated_msg = assistant_result.get("message", "").strip()
+                print(f"[AssistantChat] generated_msg = {generated_msg!r}")
+                print(f"[AssistantChat] reasoning = {assistant_result.get('reasoning', '')!r}")
+                if not generated_msg:
+                    self._send_json({
+                        "error": "Assistant generated empty message",
+                        "assistant": assistant_result,
+                    })
+                    return
+
+                # 2. Feed the generated message through the normal chat pipeline
+                if time_ctrl:
+                    engine.state.storyline.current_day = time_ctrl.get_virtual_day()
+                    engine.state.storyline.current_time_slot = time_ctrl.get_time_slot()
+
+                if proactive_sys:
+                    proactive_sys.notify_user_message()
+
+                chat_result = engine.chat(generated_msg)
+
+                if time_ctrl:
+                    chat_result["time"] = time_ctrl.get_status()
+                    time_ctrl.save()
+
+                # 3. Merge assistant info into the response
+                chat_result["assistant"] = {
+                    "generated_message": generated_msg,
+                    "strategy": strategy,
+                    "reasoning": assistant_result.get("reasoning", ""),
+                    "llm_raw": assistant_result.get("llm_raw", ""),
+                }
+
+                self._send_json(chat_result)
+
+            except Exception as e:
+                traceback.print_exc()
+                self._send_json({
+                    "error": str(e),
+                    "assistant": {"generated_message": "", "strategy": strategy},
+                })
+
+
+    # ---- Tester Handlers ----
+
+    def _handle_tester_phases(self):
+        """GET /api/tester/phases — Return available test phases."""
+        self._send_json({"phases": get_test_phases()})
+
+    def _handle_tester_events(self):
+        """GET /api/tester/events — Drain pending tester events for live display."""
+        global _tester
+        if _tester is None:
+            self._send_json({"events": []})
+            return
+        events = _tester.drain_events()
+        self._send_json({"events": events})
+
+    def _handle_tester_status(self):
+        """GET /api/tester/status — Return current tester status."""
+        global _tester
+        if _tester is None:
+            self._send_json({"running": False, "progress": 0, "current_phase": "未启动"})
+            return
+        self._send_json(_tester.get_status())
+
+    def _handle_tester_run(self):
+        """POST /api/tester/run — Start a full test run in background thread.
+
+        Body: {"phases": ["persona_basic", ...]} (optional, default = all)
+        """
+        global engine, time_ctrl, proactive_sys, _tester, _tester_thread, _engine_lock
+
+        if engine is None:
+            self._send_json({"error": "Character not loaded"}, 400)
+            return
+
+        if _tester and _tester._running:
+            self._send_json({"error": "Test already running", "status": _tester.get_status()})
+            return
+
+        data = self._read_body()
+        selected_phases = data.get("phases", None)  # None = all
+
+        _tester = CharacterTester(engine, time_ctrl, proactive_sys)
+
+        def run_tests():
+            global _engine_lock
+            with _engine_lock:
+                report = _tester.run_all(selected_phase_ids=selected_phases)
+                # Save report to file
+                report_path = os.path.join(DATA_DIR, "test_report.json")
+                with open(report_path, "w", encoding="utf-8") as f:
+                    json.dump(report, f, ensure_ascii=False, indent=2)
+                # Save markdown version
+                md = format_report_markdown(report)
+                md_path = os.path.join(DATA_DIR, "test_report.md")
+                with open(md_path, "w", encoding="utf-8") as f:
+                    f.write(md)
+                print(f"\n[Tester] Report saved to {report_path} and {md_path}")
+
+        _tester_thread = threading.Thread(target=run_tests, daemon=True)
+        _tester_thread.start()
+
+        self._send_json({"success": True, "message": "Test started", "status": _tester.get_status()})
+
+    def _handle_tester_stop(self):
+        """POST /api/tester/stop — Stop a running test."""
+        global _tester
+        if _tester and _tester._running:
+            _tester._running = False
+            self._send_json({"success": True, "message": "Stop signal sent"})
+        else:
+            self._send_json({"error": "No test running"})
+
+    def _handle_tester_report(self):
+        """GET /api/tester/report — Return the latest test report."""
+        global _tester
+
+        # Try to return in-memory report first
+        if _tester and _tester.results:
+            report = _tester.generate_report()
+            report["markdown"] = format_report_markdown(report)
+            self._send_json(report)
+            return
+
+        # Fall back to saved report
+        report_path = os.path.join(DATA_DIR, "test_report.json")
+        if os.path.exists(report_path):
+            with open(report_path, "r", encoding="utf-8") as f:
+                report = json.load(f)
+            report["markdown"] = format_report_markdown(report)
+            self._send_json(report)
+            return
+
+        self._send_json({"error": "No test report available"})
 
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):

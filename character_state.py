@@ -854,9 +854,8 @@ class CharacterState:
             # Stats
             "interaction_count": self.interaction_count,
 
-            # Relationship judgments (v2.5)
+            # Relationship judgments (v3.0 — no goal field)
             "relationship_label": self.judge.relationship_label,
-            "relationship_goal": self.judge.relationship_goal,
             "user_speculation": self.judge.user_speculation,
         }
 
@@ -1004,7 +1003,6 @@ class CharacterState:
             "story_day": f"Day {self.storyline.current_day + 1} {self.storyline.current_time_slot}",
             "memory_count": f"short {len(self.memory.short_term)} | long {len(self.memory.long_term)}",
             "relationship_label": self.judge.relationship_label,
-            "relationship_goal": self.judge.relationship_goal,
             "user_speculation": self.judge.user_speculation,
             "prompt_stage": f"{stage} ({stage_names[stage]})",
         }

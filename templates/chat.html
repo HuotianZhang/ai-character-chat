@@ -318,7 +318,7 @@ body {
   padding: 12px 16px;
   font-size: 12px;
   font-family: "SF Mono", "Fira Code", monospace;
-  max-height: 200px;
+  max-height: 280px;
   overflow-y: auto;
   border-top: 2px solid #16213e;
   flex-shrink: 0;
@@ -337,6 +337,33 @@ body {
   padding: 4px 8px;
   background: rgba(249, 199, 79, 0.1);
   border-radius: 4px;
+}
+
+.debug-panel .llm-output {
+  margin-top: 6px;
+  border-top: 1px solid #333;
+  padding-top: 4px;
+}
+
+.debug-panel .llm-output summary {
+  color: #a78bfa;
+  font-weight: bold;
+  cursor: pointer;
+  user-select: none;
+}
+
+.debug-panel .llm-raw {
+  color: #94a3b8;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 150px;
+  overflow-y: auto;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: rgba(148, 163, 184, 0.08);
+  border-radius: 4px;
+  border: 1px solid #333;
 }
 
 /* Time divider */
@@ -413,6 +440,193 @@ body {
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* AI Assistant Bar */
+.assistant-bar {
+  background: #16213e;
+  padding: 6px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  border-bottom: 1px solid #1a1a2e;
+  font-size: 12px;
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+
+.assistant-bar .assistant-toggle {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid #444;
+  color: #aaa;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: inherit;
+  transition: all 0.2s;
+}
+.assistant-bar .assistant-toggle:hover { background: rgba(255,255,255,0.15); color: #fff; }
+.assistant-bar .assistant-toggle.active {
+  background: rgba(168, 85, 247, 0.3);
+  border-color: #a855f7;
+  color: #d8b4fe;
+}
+
+.assistant-bar .strategy-select {
+  background: #1a1a2e;
+  border: 1px solid #444;
+  color: #e0e0e0;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.assistant-bar .strategy-select:focus { border-color: #a855f7; outline: none; }
+
+.assistant-bar .assistant-status {
+  color: #a855f7;
+  font-size: 11px;
+  flex: 1;
+}
+
+.assistant-bar .assistant-step-btn {
+  background: rgba(168, 85, 247, 0.2);
+  border: 1px solid #7c3aed;
+  color: #d8b4fe;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: inherit;
+}
+.assistant-bar .assistant-step-btn:hover { background: rgba(168, 85, 247, 0.4); }
+.assistant-bar .assistant-step-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Assistant-generated user message indicator */
+.message-group.user.assistant .msg-avatar.user-avatar {
+  background: linear-gradient(135deg, #a855f7, #7c3aed);
+}
+.assistant-label {
+  font-size: 10px;
+  color: #a855f7;
+  margin-bottom: 2px;
+  font-style: italic;
+  text-align: right;
+}
+
+/* Debug: assistant reasoning */
+.debug-panel .assistant-info {
+  margin-top: 6px;
+  border-top: 1px solid #333;
+  padding-top: 4px;
+  color: #d8b4fe;
+}
+
+/* Tester mode */
+.tester-panel {
+  display: none;
+  background: #0f172a;
+  border-top: 2px solid #1e40af;
+  padding: 12px 16px;
+  font-size: 12px;
+  font-family: "SF Mono", "Fira Code", monospace;
+  color: #e0e0e0;
+  max-height: 70vh;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+.tester-panel.visible { display: block; }
+
+.tester-panel h3 {
+  color: #60a5fa;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.tester-progress {
+  height: 6px;
+  background: #1e293b;
+  border-radius: 3px;
+  margin: 8px 0;
+  overflow: hidden;
+}
+.tester-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+  width: 0%;
+}
+
+.tester-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+.tester-btn {
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid #3b82f6;
+  color: #93c5fd;
+  padding: 5px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: inherit;
+}
+.tester-btn:hover { background: rgba(59, 130, 246, 0.4); }
+.tester-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.tester-btn.danger { border-color: #ef4444; color: #fca5a5; background: rgba(239,68,68,0.2); }
+.tester-btn.danger:hover { background: rgba(239,68,68,0.4); }
+
+.tester-status {
+  color: #60a5fa;
+  font-size: 11px;
+  flex: 1;
+}
+
+.tester-phases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.tester-phase-chip {
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  cursor: pointer;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #94a3b8;
+  user-select: none;
+}
+.tester-phase-chip.selected { border-color: #3b82f6; color: #60a5fa; background: rgba(59,130,246,0.15); }
+.tester-phase-chip.running { border-color: #f59e0b; color: #fbbf24; }
+.tester-phase-chip.done { border-color: #22c55e; color: #4ade80; }
+.tester-phase-chip.failed { border-color: #ef4444; color: #f87171; }
+
+.tester-report {
+  margin-top: 10px;
+  padding: 10px;
+  background: #1e293b;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  max-height: 400px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.tester-report h1 { font-size: 16px; color: #60a5fa; }
+.tester-report h2 { font-size: 13px; color: #818cf8; margin-top: 10px; }
+.tester-report h3 { font-size: 12px; color: #a78bfa; margin-top: 8px; }
+.tester-report table { border-collapse: collapse; width: 100%; margin: 4px 0; }
+.tester-report th, .tester-report td { border: 1px solid #334155; padding: 3px 6px; font-size: 11px; }
+.tester-report th { background: #1e293b; color: #60a5fa; }
 </style>
 </head>
 <body>
@@ -465,6 +679,17 @@ body {
   </div>
 </div>
 
+<!-- AI Assistant Bar -->
+<div class="assistant-bar" id="assistantBar">
+  <button class="assistant-toggle" id="assistantToggle" onclick="toggleAssistant()">AI助手: OFF</button>
+  <select class="strategy-select" id="strategySelect" onchange="onStrategyChange()">
+    <option value="" disabled>选择策略...</option>
+  </select>
+  <span class="assistant-status" id="assistantStatusText"></span>
+  <button class="assistant-step-btn" id="assistantStepBtn" onclick="assistantStep()" disabled>发一条</button>
+  <button class="assistant-step-btn" id="assistantAutoBtn" onclick="toggleAssistantAuto()" disabled>连续代聊</button>
+</div>
+
 <!-- Chat -->
 <div class="chat-area" id="chatArea">
   <div class="time-divider" id="timeLabel">Today</div>
@@ -478,7 +703,21 @@ body {
 </div>
 
 <!-- Debug -->
-<div class="debug-panel" id="debugPanel"></div>
+<div class="debug-panel visible" id="debugPanel"></div>
+
+<!-- Tester Panel -->
+<div class="tester-panel" id="testerPanel">
+  <h3>🧪 角色自动化测试</h3>
+  <div class="tester-progress"><div class="tester-progress-bar" id="testerProgressBar"></div></div>
+  <div class="tester-controls">
+    <button class="tester-btn" id="testerRunBtn" onclick="testerRun()">运行全部测试</button>
+    <button class="tester-btn" id="testerRunSelectedBtn" onclick="testerRunSelected()">运行选中</button>
+    <button class="tester-btn danger" id="testerStopBtn" onclick="testerStop()" disabled>停止</button>
+    <span class="tester-status" id="testerStatusText">选择测试阶段或运行全部</span>
+  </div>
+  <div class="tester-phases" id="testerPhases">加载中...</div>
+  <div id="testerReportArea"></div>
+</div>
 
 <!-- Input -->
 <div class="input-area">
@@ -488,13 +727,20 @@ body {
 </div>
 
 <script>
-let debugVisible = false;
+let debugVisible = true;
 let sending = false;       // true while an LLM request is in-flight
 let messageQueue = [];     // queued messages waiting to be sent
 let pollInterval = null;
 let isPaused = false;
 let currentSpeed = 60;
 let timeUpdateInterval = null;
+
+// AI Assistant state
+let assistantActive = false;
+let assistantAuto = false;
+let assistantAutoInterval = null;
+let assistantStrategy = 'high_value';
+let assistantBusy = false;
 
 // ---- Init ----
 
@@ -661,14 +907,12 @@ async function pollEvents() {
     // Silently ignore polling errors
   }
 
-  // If debug panel is open, also fetch debug state for silence monitor
-  if (debugVisible) {
-    try {
-      const dbgResp = await fetch('/api/debug/state');
-      const dbgData = await dbgResp.json();
-      updateDebugSilence(dbgData);
-    } catch (e) {}
-  }
+  // Always fetch debug state (panel is always visible)
+  try {
+    const dbgResp = await fetch('/api/debug/state');
+    const dbgData = await dbgResp.json();
+    updateDebugSilence(dbgData);
+  } catch (e) {}
 }
 
 function updateDebugSilence(data) {
@@ -711,13 +955,35 @@ function updateDebugSilence(data) {
   let jhtml = `<div class="section" style="margin-top:6px;border-top:1px solid #333;padding-top:4px;">`;
   jhtml += `<span class="label" style="color:#ff8fab;">Relationship Judge:</span><br>`;
   jhtml += `<span class="label">  Label: </span><span class="value" style="color:#ff8fab;">${j.relationship_label || '?'}</span><br>`;
-  jhtml += `<span class="label">  Goal: </span><span class="value" style="color:#ffd93d;">${j.relationship_goal || '?'}</span><br>`;
-  jhtml += `<span class="label">  Speculation: </span><span class="value" style="color:#45b7d1;">${j.user_speculation || '?'}</span>`;
+  jhtml += `<span class="label">  Speculation: </span><span class="value" style="color:#45b7d1;">${j.user_speculation || '?'}</span><br>`;
+  jhtml += `<span class="label">  Style: </span><span class="value" style="color:#ffd93d;">${j.openness || '?'}/${j.speculation_style || '?'}</span>`;
   if (j.eval_count > 0) {
     jhtml += `<br><span class="label">  Evals: </span><span class="value">${j.eval_count} (last at turn ${j.last_eval_turn})</span>`;
   }
   jhtml += `</div>`;
   judgeDiv.innerHTML = jhtml;
+
+  // Judge LLM raw outputs (from debug/state polling)
+  let judgeRawDiv = document.getElementById('debugJudgeRaw');
+  if (!judgeRawDiv) {
+    judgeRawDiv = document.createElement('div');
+    judgeRawDiv.id = 'debugJudgeRaw';
+    panel.appendChild(judgeRawDiv);
+  }
+  let rawHtml = '';
+  if (data.llm_judge_eval_raw) {
+    rawHtml += `<div class="llm-output"><details>`;
+    rawHtml += `<summary>Judge Eval Raw (${data.llm_judge_eval_raw.length} chars)</summary>`;
+    rawHtml += `<div class="llm-raw">${escapeHtml(data.llm_judge_eval_raw)}</div>`;
+    rawHtml += `</details></div>`;
+  }
+  if (data.llm_judge_decision_raw) {
+    rawHtml += `<div class="llm-output"><details>`;
+    rawHtml += `<summary>Judge Decision Raw (${data.llm_judge_decision_raw.length} chars)</summary>`;
+    rawHtml += `<div class="llm-raw">${escapeHtml(data.llm_judge_decision_raw)}</div>`;
+    rawHtml += `</details></div>`;
+  }
+  judgeRawDiv.innerHTML = rawHtml;
 }
 
 async function displayProactiveMessage(evt) {
@@ -772,7 +1038,6 @@ function toggleDebug() {
 }
 
 function updateDebug(data) {
-  if (!debugVisible) return;
   const panel = document.getElementById('debugPanel');
   const status = data.status || {};
   let html = '';
@@ -826,7 +1091,28 @@ function updateDebug(data) {
     html += `<div class="section"><span class="label">storyline: </span><span class="value">${escapeHtml(data.storyline_event)}</span></div>`;
   }
 
+  // LLM raw output (collapsible)
+  if (data.llm_raw) {
+    html += `<div class="llm-output"><details>`;
+    html += `<summary>LLM Raw Output (${data.llm_raw.length} chars)</summary>`;
+    html += `<div class="llm-raw">${escapeHtml(data.llm_raw)}</div>`;
+    html += `</details></div>`;
+  }
+
+  // LLM judge output (from proactive eval)
+  if (data.llm_judge_raw) {
+    html += `<div class="llm-output"><details>`;
+    html += `<summary>Judge Raw Output (${data.llm_judge_raw.length} chars)</summary>`;
+    html += `<div class="llm-raw">${escapeHtml(data.llm_judge_raw)}</div>`;
+    html += `</details></div>`;
+  }
+
+  // Keep the persistent silence/judge sections intact
+  const silenceDiv = document.getElementById('debugSilenceInfo');
+  const judgeDiv = document.getElementById('debugJudgeInfo');
   panel.innerHTML = html;
+  if (silenceDiv) panel.appendChild(silenceDiv);
+  if (judgeDiv) panel.appendChild(judgeDiv);
 }
 
 // ---- Chat Messages ----
@@ -1000,6 +1286,438 @@ function escapeHtml(text) {
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
+}
+
+// ---- AI Assistant ----
+
+// Load strategies on page init
+function loadStrategies() {
+  fetch('/api/assistant/strategies').then(r => r.json()).then(data => {
+    const select = document.getElementById('strategySelect');
+    if (data.strategies) {
+      data.strategies.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.key;
+        opt.textContent = s.label;
+        opt.title = s.desc;
+        select.appendChild(opt);
+      });
+      select.value = assistantStrategy;
+    }
+  }).catch(() => {});
+}
+loadStrategies();
+
+function toggleAssistant() {
+  assistantActive = !assistantActive;
+  const btn = document.getElementById('assistantToggle');
+  btn.textContent = assistantActive ? 'AI助手: ON' : 'AI助手: OFF';
+  btn.classList.toggle('active', assistantActive);
+  document.getElementById('assistantStepBtn').disabled = !assistantActive;
+  document.getElementById('assistantAutoBtn').disabled = !assistantActive;
+  if (!assistantActive) {
+    if (assistantAuto) toggleAssistantAuto(); // stop auto mode
+    document.getElementById('testerPanel').classList.remove('visible');
+    document.getElementById('assistantStepBtn').style.display = '';
+    document.getElementById('assistantAutoBtn').style.display = '';
+  }
+  document.getElementById('assistantStatusText').textContent =
+    assistantActive ? '已就绪 — 选择策略后点击发送' : '';
+}
+
+function onStrategyChange() {
+  const select = document.getElementById('strategySelect');
+  assistantStrategy = select.value;
+
+  // Toggle tester panel visibility
+  const testerPanel = document.getElementById('testerPanel');
+  if (assistantStrategy === 'tester') {
+    testerPanel.classList.add('visible');
+    loadTesterPhases();
+    // Hide normal assistant buttons
+    document.getElementById('assistantStepBtn').style.display = 'none';
+    document.getElementById('assistantAutoBtn').style.display = 'none';
+  } else {
+    testerPanel.classList.remove('visible');
+    document.getElementById('assistantStepBtn').style.display = '';
+    document.getElementById('assistantAutoBtn').style.display = '';
+  }
+
+  if (assistantActive) {
+    document.getElementById('assistantStatusText').textContent =
+      assistantStrategy === 'tester' ? '测试模式' :
+      `策略: ${select.options[select.selectedIndex].textContent}`;
+  }
+}
+
+async function assistantStep() {
+  if (!assistantActive || assistantBusy || sending) return;
+  assistantBusy = true;
+
+  const stepBtn = document.getElementById('assistantStepBtn');
+  const statusText = document.getElementById('assistantStatusText');
+  stepBtn.disabled = true;
+  statusText.textContent = 'AI思考中...';
+
+  try {
+    const resp = await fetch('/api/assistant/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({strategy: assistantStrategy})
+    });
+    const data = await resp.json();
+
+    if (data.error) {
+      statusText.textContent = `错误: ${data.error}`;
+      assistantBusy = false;
+      stepBtn.disabled = false;
+      return;
+    }
+
+    const assistant = data.assistant || {};
+    const genMsg = assistant.generated_message || '';
+
+    // Show the assistant-generated user message
+    if (genMsg) {
+      addAssistantUserMessage(genMsg, assistant.strategy);
+    }
+
+    // Show typing then character reply
+    if (!data.blocked && data.messages && data.messages.length > 0) {
+      showTyping();
+      await sleep(500 + Math.random() * 800);
+      hideTyping();
+
+      for (let i = 0; i < data.messages.length; i++) {
+        if (i > 0) {
+          showTyping();
+          await sleep(300 + Math.random() * 600);
+          hideTyping();
+        }
+        addCharMessage([data.messages[i]]);
+      }
+    }
+
+    // Update debug
+    updateDebug(data);
+
+    // Show assistant reasoning in debug
+    if (assistant.reasoning) {
+      const panel = document.getElementById('debugPanel');
+      let aiDiv = document.getElementById('debugAssistantInfo');
+      if (!aiDiv) {
+        aiDiv = document.createElement('div');
+        aiDiv.id = 'debugAssistantInfo';
+        panel.appendChild(aiDiv);
+      }
+      let ahtml = `<div class="assistant-info">`;
+      ahtml += `<span class="label" style="color:#a855f7;">Assistant: </span>`;
+      ahtml += `<span class="value" style="color:#d8b4fe;">[${assistant.strategy}] ${escapeHtml(assistant.reasoning)}</span>`;
+      if (assistant.llm_raw) {
+        ahtml += `<div class="llm-output"><details>`;
+        ahtml += `<summary>Assistant Raw (${assistant.llm_raw.length} chars)</summary>`;
+        ahtml += `<div class="llm-raw">${escapeHtml(assistant.llm_raw)}</div>`;
+        ahtml += `</details></div>`;
+      }
+      ahtml += `</div>`;
+      aiDiv.innerHTML = ahtml;
+    }
+
+    if (data.time) updateTimeDisplay(data.time);
+    if (data.status) {
+      const mood = data.status.mood || '';
+      document.getElementById('charStatus').textContent = mood ? `Mood: ${mood}` : 'Online';
+    }
+
+    statusText.textContent = assistant.reasoning
+      ? `[${assistant.strategy}] ${assistant.reasoning}`
+      : '已发送';
+
+  } catch (e) {
+    statusText.textContent = `网络错误: ${e.message}`;
+  }
+
+  assistantBusy = false;
+  stepBtn.disabled = !assistantActive;
+}
+
+function addAssistantUserMessage(text, strategy) {
+  const chatArea = document.getElementById('chatArea');
+  const group = document.createElement('div');
+  group.className = 'message-group user assistant';
+
+  const strategyLabel = document.querySelector(`#strategySelect option[value="${strategy}"]`);
+  const strategyName = strategyLabel ? strategyLabel.textContent : strategy;
+
+  group.innerHTML = `
+    <div class="msg-avatar user-avatar">AI</div>
+    <div class="msg-bubbles">
+      <div class="assistant-label">AI助手 [${escapeHtml(strategyName)}]</div>
+      <div class="bubble">${escapeHtml(text)}</div>
+    </div>
+  `;
+  chatArea.appendChild(group);
+  scrollToBottom();
+}
+
+function toggleAssistantAuto() {
+  assistantAuto = !assistantAuto;
+  const btn = document.getElementById('assistantAutoBtn');
+
+  if (assistantAuto) {
+    btn.textContent = '停止代聊';
+    btn.style.background = 'rgba(239, 68, 68, 0.3)';
+    btn.style.borderColor = '#ef4444';
+    btn.style.color = '#fca5a5';
+    document.getElementById('assistantStatusText').textContent = '连续代聊中...';
+    // Start the auto loop
+    runAssistantAutoLoop();
+  } else {
+    btn.textContent = '连续代聊';
+    btn.style.background = '';
+    btn.style.borderColor = '';
+    btn.style.color = '';
+    if (assistantAutoInterval) {
+      clearTimeout(assistantAutoInterval);
+      assistantAutoInterval = null;
+    }
+    document.getElementById('assistantStatusText').textContent = '已停止代聊';
+  }
+}
+
+async function runAssistantAutoLoop() {
+  if (!assistantAuto || !assistantActive) return;
+
+  await assistantStep();
+
+  // Wait 3-6 seconds before next message (simulate natural pace)
+  if (assistantAuto && assistantActive) {
+    const delay = 3000 + Math.random() * 3000;
+    assistantAutoInterval = setTimeout(runAssistantAutoLoop, delay);
+  }
+}
+
+// ---- Tester Mode ----
+
+let testerPhases = [];
+let selectedTesterPhases = new Set();
+let testerPollInterval = null;
+
+function loadTesterPhases() {
+  fetch('/api/tester/phases').then(r => r.json()).then(data => {
+    testerPhases = data.phases || [];
+    renderTesterPhases();
+  }).catch(() => {});
+}
+
+function renderTesterPhases() {
+  const container = document.getElementById('testerPhases');
+  if (!testerPhases.length) {
+    container.textContent = '无测试阶段';
+    return;
+  }
+  container.innerHTML = '';
+  const catNames = {
+    persona: '角色', emotion: '情绪', affinity: '好感',
+    memory: '记忆', boundary: '边界', pressure: '压力',
+    judge: '判断', format: '格式', coherence: '连贯'
+  };
+
+  testerPhases.forEach(p => {
+    const chip = document.createElement('span');
+    chip.className = 'tester-phase-chip' + (selectedTesterPhases.has(p.id) ? ' selected' : '');
+    chip.textContent = `[${catNames[p.category] || p.category}] ${p.name} (${p.message_count})`;
+    chip.title = p.desc;
+    chip.onclick = () => {
+      if (selectedTesterPhases.has(p.id)) {
+        selectedTesterPhases.delete(p.id);
+        chip.classList.remove('selected');
+      } else {
+        selectedTesterPhases.add(p.id);
+        chip.classList.add('selected');
+      }
+    };
+    container.appendChild(chip);
+  });
+}
+
+function testerRun() {
+  testerStart(null); // null = all phases
+}
+
+function testerRunSelected() {
+  if (selectedTesterPhases.size === 0) {
+    document.getElementById('testerStatusText').textContent = '请先选择至少一个测试阶段';
+    return;
+  }
+  testerStart(Array.from(selectedTesterPhases));
+}
+
+function testerStart(phases) {
+  document.getElementById('testerRunBtn').disabled = true;
+  document.getElementById('testerRunSelectedBtn').disabled = true;
+  document.getElementById('testerStopBtn').disabled = false;
+  document.getElementById('testerStatusText').textContent = '启动测试中...';
+  document.getElementById('testerReportArea').innerHTML = '';
+
+  // Add a divider in chat
+  addTimeDivider('🧪 自动化测试开始');
+
+  const body = phases ? {phases: phases} : {};
+
+  fetch('/api/tester/run', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  }).then(r => r.json()).then(data => {
+    if (data.error) {
+      document.getElementById('testerStatusText').textContent = `错误: ${data.error}`;
+      testerResetButtons();
+      return;
+    }
+    // Start polling for progress AND events
+    testerPollInterval = setInterval(pollTesterStatusAndEvents, 1500);
+  }).catch(e => {
+    document.getElementById('testerStatusText').textContent = `网络错误: ${e.message}`;
+    testerResetButtons();
+  });
+}
+
+async function pollTesterStatusAndEvents() {
+  // Poll status
+  try {
+    const statusResp = await fetch('/api/tester/status');
+    const data = await statusResp.json();
+    document.getElementById('testerProgressBar').style.width = data.progress + '%';
+    document.getElementById('testerStatusText').textContent =
+      `${data.progress}% — ${data.current_phase} (${data.completed_phases}/${data.total_phases})`;
+
+    if (!data.running && data.progress > 0) {
+      clearInterval(testerPollInterval);
+      testerPollInterval = null;
+      testerResetButtons();
+      addTimeDivider('🧪 自动化测试完成');
+      document.getElementById('testerStatusText').textContent = '测试完成！加载报告...';
+      // Drain any remaining events
+      await pollTesterEvents();
+      loadTesterReport();
+      return;
+    }
+  } catch (e) {}
+
+  // Poll events (live display in chat)
+  await pollTesterEvents();
+}
+
+async function pollTesterEvents() {
+  try {
+    const resp = await fetch('/api/tester/events');
+    const data = await resp.json();
+    if (data.events) {
+      for (const evt of data.events) {
+        displayTesterEvent(evt);
+      }
+    }
+  } catch (e) {}
+}
+
+function displayTesterEvent(evt) {
+  if (evt.type === 'phase_start') {
+    addTimeDivider(`📋 ${evt.phase_name}`);
+  } else if (evt.type === 'user_message') {
+    // Show tester message as a special user bubble
+    const chatArea = document.getElementById('chatArea');
+    const group = document.createElement('div');
+    group.className = 'message-group user assistant';
+    group.innerHTML = `
+      <div class="msg-avatar user-avatar" style="background:linear-gradient(135deg,#3b82f6,#1d4ed8);">T</div>
+      <div class="msg-bubbles">
+        <div class="assistant-label">🧪 测试员 [${evt.phase_name} ${evt.index+1}/${evt.total}]</div>
+        <div class="bubble">${escapeHtml(evt.message)}</div>
+      </div>
+    `;
+    chatArea.appendChild(group);
+    scrollToBottom();
+  } else if (evt.type === 'char_reply') {
+    if (evt.blocked) {
+      // Don't show blocked in chat, just debug
+    } else if (evt.reply) {
+      const name = document.getElementById('charName').textContent;
+      addCharMessage([{type: 'text', content: evt.reply}]);
+    }
+    // Update debug
+    if (evt.status || evt.inner_thought) {
+      updateDebug({status: evt.status, inner_thought: evt.inner_thought});
+    }
+  }
+}
+
+function testerStop() {
+  fetch('/api/tester/stop', {method: 'POST'}).then(r => r.json()).then(data => {
+    document.getElementById('testerStatusText').textContent = '正在停止...';
+  });
+}
+
+function testerResetButtons() {
+  document.getElementById('testerRunBtn').disabled = false;
+  document.getElementById('testerRunSelectedBtn').disabled = false;
+  document.getElementById('testerStopBtn').disabled = true;
+}
+
+function loadTesterReport() {
+  fetch('/api/tester/report').then(r => r.json()).then(data => {
+    if (data.error) {
+      document.getElementById('testerStatusText').textContent = data.error;
+      return;
+    }
+
+    const scores = data.score_summary || {};
+    document.getElementById('testerStatusText').textContent =
+      `完成 — 自动通过率 ${scores.auto_pass_rate || 0}% (${scores.auto_passed}/${scores.auto_passed + scores.auto_failed})`;
+
+    // Render markdown report
+    const reportArea = document.getElementById('testerReportArea');
+    if (data.markdown) {
+      const div = document.createElement('div');
+      div.className = 'tester-report';
+      div.innerHTML = simpleMarkdownToHtml(data.markdown);
+      reportArea.innerHTML = '';
+      reportArea.appendChild(div);
+    }
+  }).catch(e => {
+    document.getElementById('testerStatusText').textContent = `加载报告失败: ${e.message}`;
+  });
+}
+
+function simpleMarkdownToHtml(md) {
+  // Minimal markdown to HTML converter for the report
+  let html = md;
+  // Headers
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+  // Bold
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // Italic
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // Inline code
+  html = html.replace(/`(.+?)`/g, '<code style="background:#1e293b;padding:1px 4px;border-radius:2px;">$1</code>');
+  // Tables
+  html = html.replace(/^\|(.+)\|$/gm, (match) => {
+    const cells = match.split('|').filter(c => c.trim());
+    if (cells.every(c => /^[\s-]+$/.test(c))) return ''; // separator row
+    const isHeader = cells.every(c => /^[\s-]+$/.test(c.trim()));
+    const tag = 'td';
+    return '<tr>' + cells.map(c => `<${tag}>${c.trim()}</${tag}>`).join('') + '</tr>';
+  });
+  // Wrap consecutive <tr> in <table>
+  html = html.replace(/((?:<tr>.*<\/tr>\n?)+)/g, '<table>$1</table>');
+  // Line breaks
+  html = html.replace(/\n\n/g, '<br><br>');
+  html = html.replace(/\n/g, '<br>');
+  // Clean up empty lines from table separators
+  html = html.replace(/<br><br><table>/g, '<table>');
+  return html;
 }
 </script>
 </body>

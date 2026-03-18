@@ -63,26 +63,15 @@ class ProactiveEventSystem:
         # Collect triggered events
         events = []
 
-        # 1. Check time transitions
+        # 1. Check time transitions (storyline & routine DISABLED — kept for time tracking only)
         transitions = self.time_ctrl.check_transitions()
 
-        if transitions["slot_changed"]:
-            slot_event = self._check_storyline_event(
-                transitions["new_day"], transitions["new_slot"]
-            )
-            if slot_event:
-                events.append(slot_event)
-
-            # Check routine messages (morning greeting, good night, etc.)
-            routine = self._check_routine_message(
-                transitions["new_slot"], transitions["new_day"]
-            )
-            if routine:
-                events.append(routine)
-
         if transitions["day_changed"]:
-            # New day: update storyline day on CharacterState
+            # Still track day progression for time display
             self.state.storyline.current_day = transitions["new_day"]
+            self.state.storyline.current_time_slot = self.time_ctrl.get_time_slot()
+
+        if transitions["slot_changed"]:
             self.state.storyline.current_time_slot = self.time_ctrl.get_time_slot()
 
         # 2. Silence monitor tick — check if user silence should trigger reactions
@@ -156,6 +145,7 @@ class ProactiveEventSystem:
         # Pass the tone to the message generator so it can use it
         event["_deliberation_tone"] = tone
         event["_deliberation_reasoning"] = reasoning
+        event["_llm_judge_raw"] = decision.get("llm_judge_raw", "")
 
         return self._generate_proactive_message(event, conversation_engine)
 
@@ -434,7 +424,7 @@ class ProactiveEventSystem:
 
         # Call LLM
         messages = [{"role": "user", "content": user_prompt}]
-        raw = call_gemini(messages, system_instruction=system_prompt)
+        raw = call_gemini(messages, system_instruction=system_prompt, max_tokens=2048, thinking_budget=0)
 
         if raw.startswith("[System:"):
             print(f"[Proactive] LLM call failed: {raw[:100]}")
@@ -452,6 +442,11 @@ class ProactiveEventSystem:
             "content": parsed["reply"],
         })
 
+        # Record inner_thought for RelationshipJudge speculation fuel
+        inner = parsed.get("inner_thought", "")
+        if inner:
+            self.state.judge.record_inner_thought(inner)
+
         # Format messages (shared utility — same logic as ConversationEngine.chat)
         reply_text = parsed["reply"]
         msg_list = format_reply_messages(reply_text)
@@ -468,6 +463,8 @@ class ProactiveEventSystem:
             "messages": msg_list,
             "status": self.state.get_status_summary(),
             "inner_thought": parsed.get("inner_thought", ""),
+            "llm_raw": raw or "",
+            "llm_judge_raw": event.get("_llm_judge_raw", ""),
             "proactive": True,
             "event_type": event["type"],
             "time_display": self.time_ctrl.get_display_date(),

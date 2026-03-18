@@ -35,32 +35,44 @@ except ImportError:
         from config import GEMINI_BASE_URL
 
 
-def call_gemini(messages, system_instruction="", temperature=None, max_tokens=None):
+def call_gemini(messages, system_instruction="", temperature=None, max_tokens=None, thinking_budget=None):
     """
     Call Gemini API (with auto-retry, prefer new SDK)
     messages: [{"role": "user"/"model", "content": "..."}]
+    thinking_budget: int or None. Set to 0 to disable thinking (for structured output).
+                     None = let the model decide.
     """
-    print(f"[LLM] Calling Gemini ({GEMINI_MODEL}), messages={len(messages)}, system_prompt_len={len(system_instruction)}")
+    print(f"[LLM] Calling Gemini ({GEMINI_MODEL}), messages={len(messages)}, system_prompt_len={len(system_instruction)}, thinking_budget={thinking_budget}")
     if USE_SDK is True:
-        return _call_via_new_sdk(messages, system_instruction, temperature, max_tokens)
+        return _call_via_new_sdk(messages, system_instruction, temperature, max_tokens, thinking_budget)
     elif USE_SDK == "legacy":
-        return _call_via_legacy_sdk(messages, system_instruction, temperature, max_tokens)
+        return _call_via_legacy_sdk(messages, system_instruction, temperature, max_tokens, thinking_budget)
     else:
-        return _call_via_http(messages, system_instruction, temperature, max_tokens)
+        return _call_via_http(messages, system_instruction, temperature, max_tokens, thinking_budget)
 
 
-def _call_via_new_sdk(messages, system_instruction="", temperature=None, max_tokens=None):
+def _call_via_new_sdk(messages, system_instruction="", temperature=None, max_tokens=None, thinking_budget=None):
     """Call via new google-genai SDK (google.genai.Client)"""
     temp = temperature or LLM_TEMPERATURE
     max_tok = max_tokens or LLM_MAX_TOKENS
 
     try:
         # Build config
-        config = genai_types.GenerateContentConfig(
-            system_instruction=system_instruction if system_instruction else None,
-            temperature=temp,
-            max_output_tokens=max_tok,
-        )
+        config_kwargs = {
+            "system_instruction": system_instruction if system_instruction else None,
+            "temperature": temp,
+            "max_output_tokens": max_tok,
+        }
+        # Disable or limit thinking for structured output calls
+        if thinking_budget is not None:
+            try:
+                config_kwargs["thinking_config"] = genai_types.ThinkingConfig(
+                    thinking_budget=thinking_budget
+                )
+                print(f"[LLM SDK] Thinking budget set to {thinking_budget}")
+            except Exception as e:
+                print(f"[LLM SDK] ThinkingConfig not supported: {e}")
+        config = genai_types.GenerateContentConfig(**config_kwargs)
 
         # Build contents list for the API
         # The new SDK accepts a list of Content objects or dicts
@@ -111,19 +123,23 @@ def _call_via_new_sdk(messages, system_instruction="", temperature=None, max_tok
         return f"[System: SDK initialization failed - {type(e).__name__}: {str(e)[:150]}]"
 
 
-def _call_via_legacy_sdk(messages, system_instruction="", temperature=None, max_tokens=None):
+def _call_via_legacy_sdk(messages, system_instruction="", temperature=None, max_tokens=None, thinking_budget=None):
     """Call via deprecated google-generativeai SDK (backward compat)"""
     temp = temperature or LLM_TEMPERATURE
     max_tok = max_tokens or LLM_MAX_TOKENS
 
     try:
+        gen_config = {
+            "temperature": temp,
+            "max_output_tokens": max_tok,
+        }
+        if thinking_budget is not None:
+            gen_config["thinking_config"] = {"thinking_budget": thinking_budget}
+            print(f"[LLM Legacy] Thinking budget set to {thinking_budget}")
         model = genai_legacy.GenerativeModel(
             model_name=GEMINI_MODEL,
             system_instruction=system_instruction if system_instruction else None,
-            generation_config={
-                "temperature": temp,
-                "max_output_tokens": max_tok,
-            },
+            generation_config=gen_config,
         )
 
         history = []
@@ -167,7 +183,7 @@ def _call_via_legacy_sdk(messages, system_instruction="", temperature=None, max_
         return f"[System: Legacy SDK failed - {type(e).__name__}: {str(e)[:150]}]"
 
 
-def _call_via_http(messages, system_instruction="", temperature=None, max_tokens=None):
+def _call_via_http(messages, system_instruction="", temperature=None, max_tokens=None, thinking_budget=None):
     """Call via HTTP direct connection (fallback)"""
     temp = temperature or LLM_TEMPERATURE
     max_tok = max_tokens or LLM_MAX_TOKENS
@@ -185,6 +201,10 @@ def _call_via_http(messages, system_instruction="", temperature=None, max_tokens
     }
     if system_instruction:
         payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+    # Disable/limit thinking for structured output calls (Gemini 2.5+ thinking models)
+    if thinking_budget is not None:
+        payload["generationConfig"]["thinkingConfig"] = {"thinkingBudget": thinking_budget}
+        print(f"[LLM HTTP] Thinking budget set to {thinking_budget}")
 
     max_retries = 5
     last_error = None
@@ -215,9 +235,25 @@ def _call_via_http(messages, system_instruction="", temperature=None, max_tokens
             data = resp.json()
             candidates = data.get("candidates", [])
             if candidates:
-                parts = candidates[0].get("content", {}).get("parts", [])
+                candidate = candidates[0]
+                finish_reason = candidate.get("finishReason", "unknown")
+                print(f"[LLM HTTP] finishReason: {finish_reason}")
+                parts = candidate.get("content", {}).get("parts", [])
                 if parts:
-                    return parts[0].get("text", "")
+                    # Skip thought parts (Gemini 2.5+ thinking models put thoughts first)
+                    output_texts = []
+                    for part in parts:
+                        if part.get("thought", False):
+                            thought_text = part.get("text", "")
+                            print(f"[LLM HTTP] Skipping thought part ({len(thought_text)} chars)")
+                            continue
+                        text = part.get("text", "")
+                        if text:
+                            output_texts.append(text)
+                    if output_texts:
+                        return "\n".join(output_texts)
+                    # Fallback: if all parts were thoughts, return last part text
+                    return parts[-1].get("text", "")
             return "[Character stays silent]"
 
         except _requests.exceptions.Timeout:
@@ -348,10 +384,9 @@ def build_system_prompt(character, state_snapshot):
 
     # Relationship judgments — always present (they affect tone)
     rel_label = snap.get("relationship_label", "")
-    rel_goal = snap.get("relationship_goal", "")
     user_spec = snap.get("user_speculation", "")
-    if rel_label or rel_goal or user_spec:
-        prompt += f"你的判断：关系={rel_label}，目标={rel_goal}，猜测对方={user_spec}\n"
+    if rel_label or user_spec:
+        prompt += f"你的判断：关系={rel_label}，猜测对方={user_spec}\n"
 
     # Semantic memory — always present (things you know about them)
     sem_mem = snap.get("semantic_memory", {})
@@ -454,7 +489,7 @@ def build_system_prompt(character, state_snapshot):
 - 情绪影响你的语气：能量高→激烈，能量低(<0.3)→冷淡或麻木。
 - 消息分段≤2时用 ||| 分隔多条短消息。
 - 真实的人会打错字、前后矛盾、突然转变话题。不要完美。
-- 你的关系判断（{rel_label}/{rel_goal}）会影响你的态度和措辞。
+- 你对关系的判断（{rel_label}）和对用户的揣测（{user_spec}）会影响你的态度和措辞。
 
 ## 回复格式（JSON）
 ```json
@@ -532,10 +567,13 @@ def parse_llm_response(raw_response):
         "inner_thought": "",
     }
 
-    # Try to extract JSON block
+    # Try to extract JSON block (handle both complete and incomplete fences)
     json_match = re.search(r'```json\s*(.*?)\s*```', raw_response, re.DOTALL)
     if json_match:
         json_str = json_match.group(1)
+    elif raw_response.strip().startswith('```'):
+        # Incomplete fence — strip it and try
+        json_str = _strip_markdown_fences(raw_response)
     else:
         # Try bracket-counting extraction (handles nested braces correctly)
         extracted = _extract_json_object(raw_response, "reply")
@@ -611,6 +649,30 @@ def parse_llm_response(raw_response):
         result = dict(_default_result)
         result["reply"] = _strip_json_from_text(raw_response)
         return result
+
+
+def _strip_markdown_fences(text):
+    """
+    Strip markdown code fences from LLM output, including INCOMPLETE fences.
+    Handles: ```json ... ```, ``` ... ```, and ```json ... (no closing fence).
+    Returns the inner content.
+    """
+    text = text.strip()
+    # Complete fences: ```json ... ``` or ``` ... ```
+    m = re.search(r'```(?:json)?\s*(.*?)\s*```', text, re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    # Incomplete fence: starts with ```json or ``` but no closing fence (truncated response)
+    if text.startswith('```'):
+        # Remove the opening ``` line
+        first_newline = text.find('\n')
+        if first_newline != -1:
+            inner = text[first_newline + 1:].strip()
+            # Also remove trailing ``` if present at very end
+            if inner.endswith('```'):
+                inner = inner[:-3].strip()
+            return inner
+    return text
 
 
 def _extract_json_object(text, required_key):
@@ -780,7 +842,7 @@ def generate_storyline(character):
 
     for attempt in range(3):
         messages = [{"role": "user", "content": prompt}]
-        raw = call_gemini(messages, temperature=0.9, max_tokens=4096)
+        raw = call_gemini(messages, temperature=0.9, max_tokens=16384, thinking_budget=0)
 
         if raw.startswith("[System:") or raw.startswith("[System Error"):
             print(f"[Storyline] Attempt {attempt+1}/3 API error: {raw[:150]}")
@@ -792,41 +854,32 @@ def generate_storyline(character):
         print(f"[Storyline] Attempt {attempt+1} got response ({len(raw)} chars)")
         print(f"[Storyline] Response preview: {raw[:200]}...")
 
-        # Strategy 1: ```json fenced block
-        json_match = re.search(r'```json\s*(.*?)\s*```', raw, re.DOTALL)
-        if json_match:
-            try:
-                storyline = json.loads(json_match.group(1))
-                print(f"[Storyline] Successfully parsed {len(storyline)} days from ```json block")
-                return storyline
-            except json.JSONDecodeError as e:
-                print(f"[Storyline] ```json block parse failed: {e}")
+        # Pre-process: strip markdown fences (including incomplete ones)
+        cleaned = _strip_markdown_fences(raw)
+        print(f"[Storyline] After fence stripping: {len(cleaned)} chars")
 
-        # Strategy 2: ``` fenced block (without json label)
-        json_match = re.search(r'```\s*(\[.*?\])\s*```', raw, re.DOTALL)
-        if json_match:
+        # Strategy 1: Try to parse the cleaned text directly as JSON array
+        cleaned_stripped = cleaned.strip()
+        if cleaned_stripped.startswith('['):
             try:
-                storyline = json.loads(json_match.group(1))
-                print(f"[Storyline] Successfully parsed {len(storyline)} days from ``` block")
-                return storyline
+                storyline = json.loads(cleaned_stripped)
+                if isinstance(storyline, list) and len(storyline) > 0:
+                    print(f"[Storyline] Successfully parsed {len(storyline)} days from cleaned JSON")
+                    return storyline
             except json.JSONDecodeError as e:
-                print(f"[Storyline] ``` block parse failed: {e}")
+                print(f"[Storyline] Direct cleaned JSON parse failed: {e}")
 
-        # Strategy 3: Bracket-counting extraction (handles nested brackets)
-        storyline = _extract_json_array(raw)
+        # Strategy 2: Bracket-counting extraction (handles nested brackets, partial JSON)
+        storyline = _extract_json_array(cleaned)
         if storyline and len(storyline) > 0:
             print(f"[Storyline] Successfully parsed {len(storyline)} days via bracket matching")
             return storyline
 
-        # Strategy 4: Try bare JSON
-        stripped = raw.strip()
-        if stripped.startswith('['):
-            try:
-                storyline = json.loads(stripped)
-                print(f"[Storyline] Parsed bare JSON: {len(storyline)} days")
-                return storyline
-            except json.JSONDecodeError as e:
-                print(f"[Storyline] Bare JSON failed: {e}")
+        # Strategy 3: Try bracket matching on original raw text
+        storyline = _extract_json_array(raw)
+        if storyline and len(storyline) > 0:
+            print(f"[Storyline] Successfully parsed {len(storyline)} days via bracket matching (raw)")
+            return storyline
 
         if attempt < 2:
             print("[Storyline] All parse strategies failed, retrying in 3s...")
@@ -887,7 +940,7 @@ MBTI：{derived.get('MBTI', '')}
 
     for attempt in range(max_attempts):
         messages = [{"role": "user", "content": prompt}]
-        raw = call_gemini(messages, temperature=0.85, max_tokens=3000)
+        raw = call_gemini(messages, temperature=0.85, max_tokens=8192, thinking_budget=0)
 
         if raw.startswith("[System:") or raw.startswith("[System Error"):
             print(f"[Backstory] Attempt {attempt+1}/{max_attempts} API error: {raw[:150]}")
@@ -903,45 +956,32 @@ MBTI：{derived.get('MBTI', '')}
         print(f"[Backstory] Attempt {attempt+1} got response ({len(raw)} chars)")
         print(f"[Backstory] Response preview: {raw[:200]}...")
 
-        # Strategy 1: ```json ... ``` fenced block
-        json_match = re.search(r'```json\s*(.*?)\s*```', raw, re.DOTALL)
-        if json_match:
+        # Pre-process: strip markdown fences (including incomplete ones from truncated responses)
+        cleaned = _strip_markdown_fences(raw)
+        print(f"[Backstory] After fence stripping: {len(cleaned)} chars")
+
+        # Strategy 1: Try to parse the cleaned text directly
+        cleaned_stripped = cleaned.strip()
+        if cleaned_stripped.startswith('{'):
             try:
-                result = json.loads(json_match.group(1))
-                if "family_background" in result:
-                    print("[Backstory] Successfully parsed from ```json block")
+                result = json.loads(cleaned_stripped)
+                if isinstance(result, dict) and "family_background" in result:
+                    print("[Backstory] Successfully parsed cleaned JSON directly")
                     return result
             except json.JSONDecodeError as e:
-                print(f"[Backstory] ```json block parse failed: {e}")
+                print(f"[Backstory] Direct JSON parse failed: {e}")
 
-        # Strategy 2: ``` ... ``` block (without json label)
-        json_match = re.search(r'```\s*(\{.*?\})\s*```', raw, re.DOTALL)
-        if json_match:
-            try:
-                result = json.loads(json_match.group(1))
-                if "family_background" in result:
-                    print("[Backstory] Successfully parsed from ``` block")
-                    return result
-            except json.JSONDecodeError as e:
-                print(f"[Backstory] ``` block parse failed: {e}")
-
-        # Strategy 3: Find the outermost { ... } containing "family_background"
-        # Use bracket counting instead of regex to handle nested braces
-        result = _extract_json_object(raw, "family_background")
+        # Strategy 2: Bracket-counting extraction (handles nested braces, partial JSON)
+        result = _extract_json_object(cleaned, "family_background")
         if result:
             print("[Backstory] Successfully parsed via bracket matching")
             return result
 
-        # Strategy 4: Try to parse the entire response as JSON (model may return bare JSON)
-        stripped = raw.strip()
-        if stripped.startswith('{'):
-            try:
-                result = json.loads(stripped)
-                if isinstance(result, dict) and "family_background" in result:
-                    print("[Backstory] Successfully parsed bare JSON response")
-                    return result
-            except json.JSONDecodeError as e:
-                print(f"[Backstory] Bare JSON parse failed: {e}")
+        # Strategy 3: Try bracket matching on original raw text
+        result = _extract_json_object(raw, "family_background")
+        if result:
+            print("[Backstory] Successfully parsed via bracket matching (raw)")
+            return result
 
         if attempt < max_attempts - 1:
             print(f"[Backstory] All parse strategies failed, retrying in 3s...")
@@ -1036,7 +1076,10 @@ class ConversationEngine:
         recent_history = self.conversation_history[-40:]
 
         # 4. Call LLM
-        raw_response = call_gemini(recent_history, system_instruction=system_prompt)
+        # Gemini 2.5 Flash: thinking tokens count toward max_output_tokens.
+        # Use large limit so thinking doesn't starve the actual reply.
+        raw_response = call_gemini(recent_history, system_instruction=system_prompt,
+                                   max_tokens=4096)
 
         # 5. Parse structured output
         parsed = parse_llm_response(raw_response)
@@ -1053,10 +1096,16 @@ class ConversationEngine:
                 "blocked": True,
                 "status": self.state.get_status_summary(),
                 "inner_thought": "[对方似乎在组织语言...]",
+                "llm_raw": raw_response or "",
             }
 
         # 7. Update state (shared utility)
         apply_parsed_output(self.state, parsed)
+
+        # 7b. Record inner_thought for RelationshipJudge speculation fuel
+        inner = parsed.get("inner_thought", "")
+        if inner:
+            self.state.judge.record_inner_thought(inner)
 
         # 8. Add PARSED REPLY to conversation history (not raw JSON!)
         # Storing raw JSON would leak format artifacts into context, causing the LLM
@@ -1086,6 +1135,7 @@ class ConversationEngine:
             "messages": messages,
             "status": self.state.get_status_summary(),
             "inner_thought": parsed.get("inner_thought", ""),
+            "llm_raw": raw_response or "",
         }
 
     def initialize_character(self):
