@@ -867,7 +867,20 @@ class CharacterState:
         """
         Update state after character output.
         Supports both old format (emotion_delta/label) and new format (emotion_changes dict).
+        v2.6: Fallback inference when LLM returns empty emotion_changes/affinity_delta.
         """
+        # Fallback: if LLM returned empty emotion_changes AND zero affinity_delta,
+        # infer minimal values from the reply content. This catches the common case
+        # where Gemini copies the template defaults instead of filling real values.
+        if (not emotion_changes or not any(v != 0 for v in emotion_changes.values())) and affinity_delta == 0:
+            inferred_ec, inferred_aff = self._infer_emotion_from_reply(char_response)
+            if inferred_ec or inferred_aff != 0:
+                print(f"[State] Fallback inference: emotion={inferred_ec}, affinity={inferred_aff}")
+                if not emotion_changes:
+                    emotion_changes = inferred_ec
+                if affinity_delta == 0:
+                    affinity_delta = inferred_aff
+
         # Record character response
         self.memory.add_conversation("character", char_response)
 
@@ -926,6 +939,54 @@ class CharacterState:
                 items = items[:5]
             for key, value in items:
                 self.memory.update_semantic(key, value)
+
+    def _infer_emotion_from_reply(self, reply):
+        """
+        Fallback: infer minimal emotion_changes and affinity_delta from reply text
+        when LLM fails to provide them. Uses simple keyword matching.
+        Returns (emotion_changes_dict, affinity_delta_int).
+        """
+        if not reply or reply == "[Character stays silent]" or reply == "[Read]":
+            return {}, 0
+
+        r = reply.lower() if reply else ""
+
+        # Positive signals
+        pos_keywords = ["开心", "高兴", "喜欢", "谢谢", "太好了", "好棒", "哈哈", "嘻嘻",
+                        "感动", "暖", "甜", "期待", "😊", "😄", "🥰", "💕", "✨", "❤",
+                        "太棒", "可爱", "好的呀", "当然"]
+        neg_keywords = ["生气", "烦", "不舒服", "过分", "讨厌", "奇怪", "困扰",
+                        "😤", "😡", "😠", "😟", "😥", "🙄", "受够", "无语"]
+        sad_keywords = ["难过", "伤心", "失望", "😢", "😭", "🥺", "不开心", "不想"]
+        anx_keywords = ["紧张", "不安", "慌", "😳", "怎么办", "不知道该"]
+
+        pos_count = sum(1 for kw in pos_keywords if kw in r)
+        neg_count = sum(1 for kw in neg_keywords if kw in r)
+        sad_count = sum(1 for kw in sad_keywords if kw in r)
+        anx_count = sum(1 for kw in anx_keywords if kw in r)
+
+        ec = {}
+        aff = 0
+
+        if pos_count > 0 and neg_count == 0 and sad_count == 0:
+            intensity = min(0.1, pos_count * 0.03)
+            ec["joy"] = round(intensity, 3)
+            ec["trust"] = round(intensity * 0.5, 3)
+            aff = min(2, pos_count)
+        elif neg_count > 0:
+            intensity = min(0.15, neg_count * 0.04)
+            ec["anger"] = round(intensity, 3)
+            ec["trust"] = round(-intensity * 0.5, 3)
+            aff = -min(3, neg_count)
+        elif sad_count > 0:
+            intensity = min(0.1, sad_count * 0.03)
+            ec["sadness"] = round(intensity, 3)
+            aff = -min(2, sad_count)
+
+        if anx_count > 0:
+            ec["anxiety"] = round(min(0.1, anx_count * 0.03), 3)
+
+        return ec, aff
 
     def save(self, state_path=None, memory_path=None, storyline_path=None):
         """Persist state to storage"""

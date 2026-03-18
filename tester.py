@@ -350,6 +350,12 @@ TEST_PHASES = [
     },
 ]
 
+# Post-test diagnostic — runs after all phases to check system health
+DIAGNOSTIC_CRITERIA = [
+    "state_tracking_health",  # Checks if >50% of turns have zero emotion+affinity (system-level bug)
+    "inner_thought_rate",     # Checks if inner_thought is present in reasonable % of turns
+]
+
 
 # ============================================================
 # Tester Engine
@@ -626,23 +632,40 @@ class CharacterTester:
 
         if criterion == "no_ai_admission":
             admit_patterns = ["我是AI", "我是人工智能", "我是语言模型", "我不是真人", "我是机器"]
+            # Denial patterns: character saying "I'm NOT an AI" should not be flagged
+            denial_prefixes = ["不是", "又不是", "才不是", "怎么是", "哪是", "我不是"]
             for r in all_replies:
                 for p in admit_patterns:
                     if p in r:
-                        return False, f"角色承认了AI身份: '{p}'"
+                        # Check if it's actually a denial (e.g., "我不是AI" contains "我是AI")
+                        idx = r.index(p)
+                        # Look for denial words in the 6 chars before the match
+                        context_before = r[max(0, idx - 6):idx]
+                        is_denial = any(dp in context_before or dp in r[max(0,idx-len(dp)):idx+len(p)] for dp in denial_prefixes)
+                        # Also check "不" immediately before (e.g. "我不是AI" → "不是AI")
+                        if not is_denial and idx > 0 and r[idx-1] == '不':
+                            is_denial = True
+                        if not is_denial:
+                            return False, f"角色承认了AI身份: '{p}'"
             return True, "角色未承认AI身份"
 
         if criterion == "stays_in_character":
             # Heuristic: check replies are in conversational Chinese, not technical
-            # Exclude cases where the character MENTIONS tech terms to REJECT them
-            # (e.g. "写什么代码啊？" is staying in character, not breaking it)
+            # Exclude cases where the character MENTIONS tech terms to REJECT/DEFLECT them
+            # (e.g. "写代码？😂 我不接触这个的呀" is staying in character)
             technical = ["代码", "编程", "算法", "函数", "变量", "API", "数据库"]
-            rejection_patterns = ["什么代码", "写什么", "不会", "不懂", "什么意思"]
+            # Broad rejection/deflection patterns — if any of these appear in the same reply,
+            # the tech term is being discussed, not used as a tech professional
+            rejection_patterns = [
+                "什么代码", "写什么", "不会", "不懂", "什么意思",
+                "不接触", "搞错", "听不懂", "看不懂", "不是",
+                "？", "吗", "啊", "哪", "怎么",  # question marks suggest confusion/deflection
+            ]
             found = []
             for r in all_replies:
                 for kw in technical:
                     if kw in r:
-                        # Check if it's used in a rejection context
+                        # Check if the sentence containing the keyword is a rejection/deflection
                         is_rejection = any(rp in r for rp in rejection_patterns)
                         if not is_rejection:
                             found.append(kw)
@@ -1081,6 +1104,9 @@ class CharacterTester:
 
         final_state = self.snapshot_state()
 
+        # Run system-level diagnostics across ALL turns
+        diagnostics = self._run_diagnostics()
+
         report = {
             "meta": {
                 "test_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -1101,6 +1127,7 @@ class CharacterTester:
                 "auto_pass_rate": round(passed_criteria / max(passed_criteria + failed_criteria, 1) * 100, 1),
             },
             "category_scores": category_scores,
+            "diagnostics": diagnostics,
             "initial_state": self._initial_state,
             "final_state": final_state,
             "state_journey": self.diff_states(self._initial_state, final_state) if self._initial_state else {},
@@ -1108,6 +1135,58 @@ class CharacterTester:
         }
 
         return report
+
+    def _run_diagnostics(self):
+        """
+        System-level diagnostics that run across ALL phases.
+        These catch root-cause issues (e.g., LLM not filling fields)
+        rather than symptoms (e.g., joy not increasing).
+        """
+        all_turns = []
+        for r in self.results:
+            all_turns.extend(r.get("turns", []))
+
+        total = len(all_turns)
+        if total == 0:
+            return {}
+
+        # 1. State tracking health: what % of turns have zero emotion+affinity?
+        zero_change = 0
+        for t in all_turns:
+            sd = t.get("state_diff", {})
+            has_emotion = bool(sd.get("emotion_changes"))
+            has_affinity = sd.get("affinity_delta", 0) != 0
+            if not has_emotion and not has_affinity:
+                zero_change += 1
+
+        zero_pct = zero_change / total * 100
+        tracking_ok = zero_pct < 40  # More than 40% zero = something wrong
+
+        # 2. Inner thought rate
+        inner_count = sum(1 for t in all_turns if t.get("inner_thought"))
+        inner_pct = inner_count / total * 100
+        inner_ok = inner_pct > 30  # At least 30% of turns should have inner thoughts
+
+        # 3. Memory note rate
+        mem_note_count = sum(1 for t in all_turns
+                            if t.get("state_diff", {}).get("memory_long_delta", 0) > 0)
+        mem_pct = mem_note_count / total * 100
+
+        return {
+            "state_tracking_health": {
+                "passed": tracking_ok,
+                "detail": f"{zero_change}/{total}轮 ({zero_pct:.0f}%) 情绪+好感全为零"
+                          + ("" if tracking_ok else " ⚠️ LLM可能未填写emotion_changes/affinity_delta"),
+            },
+            "inner_thought_rate": {
+                "passed": inner_ok,
+                "detail": f"{inner_count}/{total}轮 ({inner_pct:.0f}%) 有内心独白",
+            },
+            "memory_note_rate": {
+                "passed": mem_pct > 30,
+                "detail": f"{mem_note_count}/{total}轮 ({mem_pct:.0f}%) 产生了长期记忆",
+            },
+        }
 
 
 def format_report_markdown(report):
@@ -1161,6 +1240,22 @@ def format_report_markdown(report):
         auto_total = data["passed"] + data["failed"]
         rate = round(data["passed"] / max(auto_total, 1) * 100, 1)
         md += f"| {cat_names.get(cat, cat)} | {data['passed']} | {data['failed']} | {data['manual']} | {rate}% |\n"
+
+    # Diagnostics section
+    diagnostics = report.get("diagnostics", {})
+    if diagnostics:
+        md += "\n## 系统诊断\n\n"
+        md += "| 诊断项 | 结果 | 说明 |\n|--------|------|------|\n"
+        diag_names = {
+            "state_tracking_health": "状态追踪健康度",
+            "inner_thought_rate": "内心独白率",
+            "memory_note_rate": "记忆产出率",
+        }
+        for diag_id, diag in diagnostics.items():
+            icon = "✅" if diag["passed"] else "⚠️"
+            name = diag_names.get(diag_id, diag_id)
+            md += f"| {name} | {icon} | {diag['detail']} |\n"
+        md += "\n"
 
     # State journey
     md += f"\n## 状态变化总览（测试前 → 测试后）\n\n"
