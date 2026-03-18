@@ -893,9 +893,13 @@ class CharacterState:
                 intensity=energy,
             )
 
-        # Update semantic memory
+        # Update semantic memory (cap at 5 per turn to prevent LLM spam)
         if semantic_updates:
-            for key, value in semantic_updates.items():
+            items = list(semantic_updates.items())
+            if len(items) > 5:
+                print(f"[State] WARNING: semantic_updates has {len(items)} entries, capping at 5")
+                items = items[:5]
+            for key, value in items:
                 self.memory.update_semantic(key, value)
 
     def save(self, state_path=None, memory_path=None, storyline_path=None):

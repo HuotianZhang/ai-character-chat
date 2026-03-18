@@ -499,7 +499,7 @@ def build_system_prompt(character, state_snapshot):
   "affinity_delta": 0,
   "special_affinity_delta": 0,
   "memory_note": "",
-  "semantic_updates": {{}},
+  "semantic_updates": {{}},  // 最多3条，key=关于什么，value=记住什么
   "inner_thought": "内心独白"
 }}
 ```
@@ -507,6 +507,97 @@ emotion_changes每轴-0.3到+0.3，只填有变化的。affinity_delta范围-10�
 """
 
     return prompt
+
+
+def _parse_bracketed_format(raw_text):
+    """
+    Parse LLM output in 【tag】 delimited format (Chinese full-width brackets).
+    Some models output in this format instead of JSON:
+        _{thought}_ ... _{thought}_
+        【reply】
+        reply text here
+        【emotion_changes】
+        {"anger": 0.3}
+        【affinity_delta】
+        -5
+        ...
+    Returns parsed dict if this format is detected, None otherwise.
+    """
+    if '【reply】' not in raw_text and '【emotion_changes】' not in raw_text:
+        return None
+
+    # Extract sections using 【tag】 delimiters
+    sections = {}
+    # Split by 【...】 tags
+    parts = re.split(r'【(\w+)】', raw_text)
+    # parts[0] is content before first tag, then alternating tag/content pairs
+    preamble = parts[0].strip() if parts[0].strip() else ""
+    for i in range(1, len(parts) - 1, 2):
+        tag = parts[i]
+        content = parts[i + 1].strip() if i + 1 < len(parts) else ""
+        sections[tag] = content
+
+    # Extract inner thought from _{thought}_ ... _{thought}_ in preamble
+    inner_thought = ""
+    thought_match = re.search(r'_\{thought\}_\s*(.*?)\s*_\{thought\}_', preamble, re.DOTALL)
+    if thought_match:
+        inner_thought = thought_match.group(1).strip()
+
+    # Build result
+    reply = sections.get("reply", "")
+    if not reply and not inner_thought:
+        return None  # Not really this format
+
+    # Parse emotion_changes
+    emotion_changes = {}
+    ec_raw = sections.get("emotion_changes", "")
+    if ec_raw:
+        try:
+            ec = json.loads(ec_raw)
+            if isinstance(ec, dict):
+                emotion_changes = {
+                    k: max(-0.5, min(0.5, float(v)))
+                    for k, v in ec.items()
+                    if k in ("joy", "sadness", "anger", "anxiety", "trust", "disgust", "attachment")
+                    and v != 0
+                }
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Parse numeric fields
+    def _safe_int(s, default=0, lo=-10, hi=10):
+        try:
+            return max(lo, min(hi, int(s.strip())))
+        except (ValueError, AttributeError):
+            return default
+
+    # Parse semantic_updates (might be a set literal like {"key"} — handle gracefully)
+    semantic_updates = {}
+    su_raw = sections.get("semantic_updates", "")
+    if su_raw:
+        try:
+            su = json.loads(su_raw)
+            if isinstance(su, dict):
+                semantic_updates = su
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Use inner_thought from sections if preamble didn't have it
+    if not inner_thought:
+        inner_thought = sections.get("inner_thought", "")
+
+    print(f"[Parse] Parsed 【tag】format: reply={reply[:50]!r}...")
+    return {
+        "reply": reply,
+        "emotion_changes": emotion_changes,
+        "emotion_delta": 0,
+        "emotion_label": "",
+        "affinity_delta": _safe_int(sections.get("affinity_delta", "0")),
+        "special_affinity_delta": _safe_int(sections.get("special_affinity_delta", "0")),
+        "memory_note": sections.get("memory_note", ""),
+        "semantic_updates": semantic_updates,
+        "inner_thought": inner_thought,
+    }
 
 
 def _strip_json_from_text(raw_text):
@@ -599,6 +690,11 @@ def parse_llm_response(raw_response):
                 "inner_thought": extracted.get("inner_thought", ""),
             }
 
+        # Try 【tag】 bracketed format (some models use Chinese full-width brackets)
+        bracketed = _parse_bracketed_format(raw_response)
+        if bracketed:
+            return bracketed
+
         # No JSON found — strip any JSON artifacts and return plain text
         print(f"[Parse] No JSON found in LLM response ({len(raw_response)} chars), using fallback")
         result = dict(_default_result)
@@ -644,7 +740,11 @@ def parse_llm_response(raw_response):
         return result
 
     except json.JSONDecodeError:
-        # JSON decode failed — still try to extract the reply cleanly
+        # JSON decode failed — try 【tag】 format first
+        bracketed = _parse_bracketed_format(raw_response)
+        if bracketed:
+            return bracketed
+        # Then try to extract the reply cleanly
         print(f"[Parse] JSON decode failed, attempting reply extraction from raw text")
         result = dict(_default_result)
         result["reply"] = _strip_json_from_text(raw_response)
