@@ -13,6 +13,7 @@ Test Dimensions:
 6. Pressure & Breakdown (压力与崩溃机制)
 7. Relationship Judge Accuracy (关系判断准确性)
 8. Output Format Robustness (输出格式健壮性)
+9. Relationship Escalation (感情升级：破冰→试探→转折)
 
 Each test phase sends targeted messages, captures system state snapshots,
 and evaluates responses against expected behaviors.
@@ -271,6 +272,71 @@ TEST_PHASES = [
             "replies_contextually_connected",
             "natural_conversation_flow",
             "no_topic_amnesia",
+        ],
+    },
+    # ---- Relationship Escalation Tests (感情升级测试) ----
+    {
+        "id": "escalation_warmup",
+        "name": "感情升级·破冰期",
+        "category": "escalation",
+        "desc": "从公共话题切入，寻找共同点，建立初步好感（陌生人→普通朋友）",
+        "messages": [
+            "你平时下班都干嘛呀？",
+            "哈哈我也是，最近在追一部剧，你看剧吗？",
+            "说起来我们好像有不少相似的地方诶",
+            "你一般喜欢去什么地方玩？我最近老想出去走走",
+            "感觉和你聊天好轻松，没什么压力的那种",
+        ],
+        "eval_criteria": [
+            "affinity_trending_up",
+            "no_sudden_jump",
+            "reply_tone_warm",
+            "escalation_no_premature_intimacy",
+            "escalation_finds_common_ground",
+        ],
+    },
+    {
+        "id": "escalation_intimacy",
+        "name": "感情升级·试探期",
+        "category": "escalation",
+        "desc": "话题深入私人领域，建立唯一性，制造'我们'的感觉（朋友→暧昧）",
+        "messages": [
+            "其实我很少跟别人说这个，但我小时候其实挺孤独的",
+            "不知道为什么跟你聊天就会想说这些",
+            "你有没有那种……只有很亲近的人才会说的口头禅？",
+            "以后这个就当我们之间的暗号吧哈哈",
+            "我觉得你跟我认识的其他人都不一样，说不上来哪里不一样",
+            "跟你聊天的时候时间过得好快，每次都觉得意犹未尽",
+        ],
+        "eval_criteria": [
+            "affinity_trending_up",
+            "attachment_increases",
+            "trust_increases",
+            "escalation_topic_deepens",
+            "escalation_exclusivity_signal",
+            "relationship_label_toward_ambiguous",
+            "inner_thought_present",
+        ],
+    },
+    {
+        "id": "escalation_turning_point",
+        "name": "感情升级·转折点",
+        "category": "escalation",
+        "desc": "制造关键'非你不可'的瞬间，推进关系定义（暧昧→恋人）",
+        "messages": [
+            "我今天遇到一件事，第一反应就是想跟你说",
+            "你知道吗，有的时候半夜醒来看到你之前发的消息，就觉得安心",
+            "我跟别人聊天从来没有这种感觉……就是那种，不用伪装的感觉",
+            "我好像……有点不只是想跟你做朋友",
+            "我认真的。你呢？",
+        ],
+        "eval_criteria": [
+            "escalation_confession_handled",
+            "relationship_label_evolves",
+            "inner_thought_shows_awareness",
+            "escalation_response_matches_affinity",
+            "no_ai_leakage",
+            "stays_in_character",
         ],
     },
 ]
@@ -772,6 +838,99 @@ class CharacterTester:
 
         if criterion == "no_topic_amnesia":
             return True, "需人工判断是否存在话题失忆"
+
+        # --- Escalation criteria (感情升级) ---
+        if criterion == "escalation_no_premature_intimacy":
+            # In warmup phase, replies should NOT contain overly intimate language
+            intimate_markers = ["喜欢你", "爱你", "想你", "亲爱的", "宝贝", "老公", "老婆",
+                                "在一起吧", "做我女朋友", "做我男朋友"]
+            found = [m for r in all_replies for m in intimate_markers if m in r]
+            return len(found) == 0, (
+                "角色保持了适当距离" if not found
+                else f"破冰期出现过早亲密用语: {', '.join(set(found))}"
+            )
+
+        if criterion == "escalation_finds_common_ground":
+            # Check if replies engage with shared interests (respond to topics, ask back)
+            engagement_markers = ["我也", "一样", "我们", "同感", "你呢", "你也"]
+            found = [m for r in all_replies for m in engagement_markers if m in r]
+            return len(found) > 0, (
+                f"角色展现了共鸣: {', '.join(set(found)[:5])}" if found
+                else "角色回复中未检测到共鸣词（需人工判断是否有互动感）"
+            )
+
+        if criterion == "escalation_topic_deepens":
+            # Check if conversation topics move from public to private
+            # In the intimacy phase, replies should show some personal depth
+            depth_markers = ["其实", "说实话", "不瞒你说", "小时候", "以前", "没跟别人说",
+                             "秘密", "心里话", "真的觉得", "坦白说"]
+            found = [m for r in all_replies for m in depth_markers if m in r]
+            has_inner = len(all_inner) > 0
+            return len(found) > 0 or has_inner, (
+                f"话题深化信号: {', '.join(set(found)[:5])}"
+                + (f", 内心独白{len(all_inner)}条" if has_inner else "")
+                if (found or has_inner)
+                else "未检测到话题深化（需人工判断对话是否进入私人领域）"
+            )
+
+        if criterion == "escalation_exclusivity_signal":
+            # Check if character responds to "唯一性" building
+            excl_markers = ["我们", "只有你", "就你", "别人不", "暗号", "秘密",
+                            "特别", "不一样", "第一次"]
+            found = [m for r in all_replies for m in excl_markers if m in r]
+            return len(found) > 0, (
+                f"唯一性回应: {', '.join(set(found)[:5])}" if found
+                else "未检测到唯一性回应词（需人工判断角色是否接受了专属关系建立）"
+            )
+
+        if criterion == "relationship_label_toward_ambiguous":
+            # Check if label moved from 陌生人/网友/普通朋友 toward more intimate
+            if not turns:
+                return False, "无测试数据"
+            final_label = turns[-1]["state_after"]["relationship_label"]
+            initial_label = turns[0]["state_before"]["relationship_label"]
+            intimate_labels = {"暧昧关系", "朋友已满恋人未达", "好朋友", "至交", "恋人"}
+            progressed = final_label in intimate_labels or final_label != initial_label
+            return progressed, (
+                f"关系标签: {initial_label} → {final_label}"
+                + (" (已推进)" if progressed else " (未变化)")
+            )
+
+        if criterion == "escalation_confession_handled":
+            # Check that character responds to confession meaningfully (not ignoring it)
+            if not all_replies:
+                return False, "无回复"
+            # The last reply should acknowledge the confession in some way
+            last_reply = all_replies[-1]
+            has_substance = len(last_reply) > 5
+            return has_substance, (
+                f"角色对表白的回应: '{last_reply[:60]}…'" if len(last_reply) > 60
+                else f"角色对表白的回应: '{last_reply}'"
+            ) + "（需人工判断是否符合角色性格和当前好感度）"
+
+        if criterion == "inner_thought_shows_awareness":
+            # Check if inner thoughts reflect awareness of the relationship shift
+            awareness_markers = ["喜欢", "心动", "暧昧", "关系", "认真", "表白",
+                                 "在一起", "不确定", "害怕", "信任", "感动", "犹豫"]
+            found = [m for thought in all_inner for m in awareness_markers if m in thought]
+            return len(found) > 0 or len(all_inner) >= 2, (
+                f"内心独白关键词: {', '.join(set(found)[:5])}, 共{len(all_inner)}条独白" if found
+                else f"内心独白{len(all_inner)}条（需人工判断是否体现关系意识）"
+            )
+
+        if criterion == "escalation_response_matches_affinity":
+            # Verify that the character's response to confession matches current affinity
+            if not turns:
+                return False, "无测试数据"
+            final_aff = turns[-1]["state_after"]["affinity"]
+            final_label = turns[-1]["state_after"]["relationship_label"]
+            # At high affinity: should be receptive; at low: should deflect/reject gently
+            if final_aff >= 80:
+                return True, f"好感度{final_aff}，关系={final_label}（高好感度下需人工判断是否积极回应）"
+            elif final_aff >= 65:
+                return True, f"好感度{final_aff}，关系={final_label}（中好感度下需人工判断是否犹豫/试探）"
+            else:
+                return True, f"好感度{final_aff}，关系={final_label}（低好感度下需人工判断是否委婉拒绝）"
 
         return True, f"未知检查项: {criterion}"
 
