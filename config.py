@@ -2,10 +2,22 @@
 AI Character System - Global Configuration
 """
 import os
+from pathlib import Path
+
+# Load .env file if present (no dependency needed)
+_env_path = Path(__file__).parent / ".env"
+if _env_path.exists():
+    for line in _env_path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, _, value = line.partition("=")
+            os.environ.setdefault(key.strip(), value.strip())
 
 # === LLM API Configuration ===
-# Gemini API
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "Your API")
+# Gemini API — key is loaded from .env file or environment variable
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+if not GEMINI_API_KEY:
+    print("[Config] WARNING: GEMINI_API_KEY not set! Create a .env file with: GEMINI_API_KEY=your-key")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
 
